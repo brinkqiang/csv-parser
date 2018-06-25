@@ -1,5 +1,6 @@
 /** @csv */
 
+#include <assert.h>
 #include <stdexcept>
 #include <cstdio>
 #include <iostream>
@@ -26,9 +27,143 @@ namespace csv {
     /** @file */
 
     class CSVField;
-    using CSVRow = std::vector<CSVField>;
+
+    template<class T>
+    class FreeAlloc;
+
+    using CSVString = std::basic_string<char, std::char_traits<char>, FreeAlloc<char>>;
+
+    template<class T>
+    using CSVVec = std::vector<T, FreeAlloc<T>>;
+    using CSVRow = CSVVec<CSVField>;
 
     const int CSV_NOT_FOUND = -1;
+
+    template<class T>
+        class FreeAlloc {
+            struct Block {
+                Block(void* free, size_t n) {
+                    prev = nullptr;
+                    next = nullptr;
+                    buffer = reinterpret_cast<T*>((char*)free + sizeof(Block));
+                    size = n;
+                };
+
+                Block* prev;
+                Block* next;
+                T* buffer;
+                size_t size;
+            };
+
+        public:
+            using size_type = size_t;
+            using difference_type = ptrdiff_t;
+            using pointer = T * ;
+            using const_pointer = const T*;
+            using reference = T & ;
+            using const_reference = const T&;
+            using value_type = T;
+
+            FreeAlloc() {};
+            template <class U> constexpr FreeAlloc(const FreeAlloc<U>& other) noexcept {};
+
+            void init() {
+                void* temp = new char[1000];
+                free_list = reinterpret_cast<Block*>(temp);
+                *free_list = Block(temp, sizeof(char[1000]) - sizeof(Block));
+            }
+
+            T * allocate(size_t n) {
+                // Starting from head find next free region
+                if (!free_list) init();
+
+                Block** current = &free_list;
+                const size_t space_required = n * sizeof(T);
+
+                for (; (*current)->next != nullptr; current = &((*current)->next));
+                int work_space = (*current)->size;
+
+                if (((*current)->size + sizeof(Block)) > space_required) {
+                    // Split current region
+                    void* split = (char*)(*current)->buffer + space_required;
+                    (*current)->size = space_required;
+
+                    work_space -= space_required;
+                    assert(work_space > 0);
+
+                    // Add new bookeeping record
+                    Block* next = reinterpret_cast<Block*>(split);
+                    work_space -= sizeof(Block);
+                    assert(work_space > 0);
+                    *next = Block(split, (size_t)work_space);
+
+                    // Update head of free list
+                    free_list = next;
+                }
+                else {
+                    throw std::runtime_error("Can't allocate");
+                }
+
+                // history.push_back(*current);
+                // assert(free_list != nullptr);
+                return (*current)->buffer;
+            }
+
+            void deallocate(T* p, size_t n) {
+                // Note: n does not get used, just implemented to satisfy API requirements
+                // Get bookeeping record associated with p
+                Block* p_book = reinterpret_cast<Block*>((char *)p - sizeof(Block));
+
+                // Find closest precedent on free list
+                Block** current = &free_list;
+                for (; *current && ((*current)->next != nullptr) && ((*current)->next < p_book);
+                    current = &((*current)->next));
+
+                if (!*current || *current > p_book) {
+                     // New head of free list should be changed to p_book
+                     p_book->prev = nullptr;
+                     if (*current) {
+                         p_book->next = *current;
+                         (*current)->prev = p_book;
+                     }
+
+                     free_list = p_book;
+                }
+                else if (*current < p_book) {
+                    // "Deallocate" by relinking to free list
+                    p_book->prev = *current;
+                    p_book->next = (*current)->next;
+                    if (p_book->next) p_book->next->prev = p_book;
+                    (*current)->next = p_book;
+                }
+
+                assert(free_list != nullptr);
+            }
+
+        private:
+            Block * free_list = nullptr; // Head of free list
+            // CSVVec<Block*> history;
+    };
+
+    template<typename T, typename T2>
+    inline bool operator==(FreeAlloc<T> const&, FreeAlloc<T2> const&) {
+        return true;
+    }
+
+    template<typename T, typename T2>
+    inline bool operator!=(FreeAlloc<T> const&, FreeAlloc<T2> const&) {
+        return false;
+    }
+
+    template<typename T, typename OtherAllocator>
+    inline bool operator==(FreeAlloc<T> const&, OtherAllocator const&) {
+        return false;
+    }
+
+    template<typename T, typename OtherAllocator>
+    inline bool operator!=(FreeAlloc<T> const&, OtherAllocator const&) {
+        return true;
+    }
 
     /** Stores information about how to parse a CSV file
      *   - Can be used to initialize a csv::CSVReader() object
@@ -38,14 +173,14 @@ namespace csv {
         char delim;
         char quote_char;
         int header;
-        std::vector<std::string> col_names;
+        CSVVec<std::string> col_names;
         bool strict;
     };
 
     /** Returned by get_file_info() */
     struct CSVFileInfo {
         std::string filename;               /**< Filename */
-        std::vector<std::string> col_names; /**< CSV column names */
+        CSVVec<std::string> col_names; /**< CSV column names */
         char delim;                         /**< Delimiting character */
         int n_rows;                         /**< Number of rows in a file */
         int n_cols;                         /**< Number of columns in a CSV */
@@ -240,14 +375,14 @@ namespace csv {
 
             /** @name Retrieving CSV Rows */
             ///@{
-            bool read_row(std::vector<std::string> &row);
-            bool read_row(std::vector<CSVField> &row);
+            bool read_row(CSVVec<std::string> &row);
+            bool read_row(CSVVec<CSVField> &row);
             ///@}
 
             /** @name CSV Metadata */
             ///@{
             const CSVFormat get_format() const;
-            const std::vector<std::string> get_col_names() const;
+            const CSVVec<std::string> get_col_names() const;
             const int index_of(const std::string& col_name) const;
             ///@}
 
@@ -268,21 +403,21 @@ namespace csv {
              *  Lower level functions for more advanced use cases
              */
             ///@{
-            std::deque<std::vector<std::string>> records
+            std::deque<CSVVec<std::string>> records
                 = {}; /**< Queue of parsed CSV rows */
             inline bool eof() { return !(this->infile); };
             void close();               /**< Close the open file handler */
             ///@}
 
-            friend std::deque<std::vector<std::string>> parse_to_string(
+            friend std::deque<CSVVec<std::string>> parse_to_string(
                 const std::string&, CSVFormat format);
 
         protected:
-            inline std::string csv_to_json(std::vector<std::string>&);
-            void set_col_names(const std::vector<std::string>&);
-            std::vector<std::string>              /**< Buffer for row being parsed */
+            inline std::string csv_to_json(CSVVec<std::string>&);
+            void set_col_names(const CSVVec<std::string>&);
+            CSVVec<std::string>              /**< Buffer for row being parsed */
                 record_buffer = { std::string() };
-            std::deque<std::vector<std::string>>::iterator current_row; /* < Used in read_row() */
+            std::deque<CSVVec<std::string>>::iterator current_row; /* < Used in read_row() */
             bool current_row_set = false;                               /* Flag to reset iterator */
             bool read_row_check();                                      /* Helper function for read_row */
 
@@ -295,8 +430,8 @@ namespace csv {
             void process_quote(std::string::const_iterator&,
                 std::string::const_iterator&, std::string&);
             void process_newline(std::string::const_iterator&, std::string&);
-            void write_record(std::vector<std::string>&);
-            virtual void bad_row_handler(std::vector<std::string>);
+            void write_record(CSVVec<std::string>&);
+            virtual void bad_row_handler(CSVVec<std::string>);
             ///@}
             
             /** @name CSV Settings and Flags **/
@@ -310,9 +445,9 @@ namespace csv {
 
             /** @name Column Information */
             ///@{
-            std::vector<std::string> col_names; /**< Column names */
+            CSVVec<std::string> col_names; /**< Column names */
             std::vector<int> subset;         /**< Indices of columns to subset */
-            std::vector<std::string> subset_col_names;
+            CSVVec<std::string> subset_col_names;
             bool subset_flag = false; /**< Set to true if we need to subset data */
             ///@}
 
@@ -335,12 +470,12 @@ namespace csv {
     class CSVStat: public CSVReader {
         public:
             void end_feed();
-            std::vector<long double> get_mean();
-            std::vector<long double> get_variance();
-            std::vector<long double> get_mins();
-            std::vector<long double> get_maxes();
-            std::vector< std::unordered_map<std::string, int> > get_counts();
-            std::vector< std::unordered_map<int, int> > get_dtypes();
+            CSVVec<long double> get_mean();
+            CSVVec<long double> get_variance();
+            CSVVec<long double> get_mins();
+            CSVVec<long double> get_maxes();
+            CSVVec< std::unordered_map<std::string, int> > get_counts();
+            CSVVec< std::unordered_map<int, int> > get_dtypes();
 
             CSVStat(std::string filename, std::vector<int> subset = {},
                 StatsOptions options = ALL_STATS, CSVFormat format = GUESS_CSV);
@@ -349,13 +484,13 @@ namespace csv {
         private:
             // An array of rolling averages
             // Each index corresponds to the rolling mean for the column at said index
-            std::vector<long double> rolling_means;
-            std::vector<long double> rolling_vars;
-            std::vector<long double> mins;
-            std::vector<long double> maxes;
-            std::vector<std::unordered_map<std::string, int>> counts;
-            std::vector<std::unordered_map<int, int>> dtypes;
-            std::vector<float> n;
+            CSVVec<long double> rolling_means;
+            CSVVec<long double> rolling_vars;
+            CSVVec<long double> mins;
+            CSVVec<long double> maxes;
+            CSVVec<std::unordered_map<std::string, int>> counts;
+            CSVVec<std::unordered_map<int, int>> dtypes;
+            CSVVec<float> n;
             
             // Statistic calculators
             void variance(const long double&, const size_t&);
@@ -371,7 +506,7 @@ namespace csv {
     class CSVGuesser {
         struct Guesser: public CSVReader {
             using CSVReader::CSVReader;
-            void bad_row_handler(std::vector<std::string> record) override;
+            void bad_row_handler(CSVVec<std::string> record) override;
             friend CSVGuesser;
 
             // Frequency counter of row length
@@ -383,7 +518,7 @@ namespace csv {
 
     public:
         CSVGuesser(const std::string _filename) : filename(_filename) {};
-        std::vector<char> delims = { ',', '|', '\t', ';', '^' };
+        CSVVec<char> delims = { ',', '|', '\t', ';', '^' };
         void guess_delim();
         bool first_guess();
         void second_guess();
@@ -401,7 +536,7 @@ namespace csv {
      */
     namespace helpers {
         bool is_equal(double a, double b, double epsilon = 0.001);
-        std::string format_row(const std::vector<std::string>& row, const std::string& delim = ", ");
+        std::string format_row(const CSVVec<std::string>& row, const std::string& delim = ", ");
         DataType data_type(const std::string&, long double * const out = nullptr);
     }
 
@@ -411,14 +546,14 @@ namespace csv {
      */
     ///@{
     std::string csv_escape(const std::string&, const bool quote_minimal = true);
-    std::deque<std::vector<std::string>> parse_to_string(
+    std::deque<CSVVec<std::string>> parse_to_string(
         const std::string& in, CSVFormat format = DEFAULT_CSV);
     std::deque<CSVRow> parse(const std::string& in, CSVFormat format = DEFAULT_CSV);
 
     CSVFileInfo get_file_info(const std::string filename);
     CSVFormat guess_format(const std::string filename);
 
-    std::vector<std::string> get_col_names(
+    CSVVec<std::string> get_col_names(
         const std::string filename,
         const CSVFormat format = GUESS_CSV);
     int get_col_pos(const std::string filename, const std::string col_name,

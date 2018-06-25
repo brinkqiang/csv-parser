@@ -30,7 +30,7 @@ namespace csv {
             return std::abs(a - b) < epsilon;
         }
 
-        std::string format_row(const std::vector<std::string>& row, const std::string& delim) {
+        std::string format_row(const CSVVec<std::string>& row, const std::string& delim) {
             /** Print a CSV row */
             std::stringstream ret;
             for (size_t i = 0; i < row.size(); i++) {
@@ -165,7 +165,7 @@ namespace csv {
         return { guesser.delim, '"', guesser.header_row };
     }
 
-    void CSVReader::bad_row_handler(std::vector<std::string> record) {
+    void CSVReader::bad_row_handler(CSVVec<std::string> record) {
         if (this->strict) {
             std::string problem;
             if (record.size() > col_names.size()) problem = "too long";
@@ -178,7 +178,7 @@ namespace csv {
         }
     };
 
-    void CSVGuesser::Guesser::bad_row_handler(std::vector<std::string> record) {
+    void CSVGuesser::Guesser::bad_row_handler(CSVVec<std::string> record) {
         if (row_tally.find(record.size()) != row_tally.end()) row_tally[record.size()]++;
         else {
             row_tally[record.size()] = 1;
@@ -215,7 +215,7 @@ namespace csv {
 
         for (size_t i = 0; i < delims.size(); i++) {
             format.delim = delims[i];
-            CSVReader guesser(this->filename, {}, format);
+            CSVReader guesser(this->filename, std::vector<int>(), format);
            
             // WORKAROUND on Unix systems because certain newlines
             // get double counted
@@ -274,7 +274,7 @@ namespace csv {
         this->header_row = static_cast<int>(header);
     }
 
-    std::deque<std::vector<std::string>> parse_to_string(
+    std::deque<CSVVec<std::string>> parse_to_string(
         const std::string& in, CSVFormat format) {
         /** Parse an in-memory CSV string */
         CSVReader parser(format);
@@ -298,12 +298,12 @@ namespace csv {
         return ret;
     }
 
-    std::vector<std::string> get_col_names(const std::string filename, CSVFormat format) {
+    CSVVec<std::string> get_col_names(const std::string filename, CSVFormat format) {
         /** Return a CSV's column names
          *  @param[in] filename  Path to CSV file
          *  @param[in] format    Format of the CSV file
          */
-        CSVReader reader(filename, {}, format);
+        CSVReader reader(filename, std::vector<int>(), format);
         return reader.get_col_names();
     }
 
@@ -317,7 +317,7 @@ namespace csv {
          *  @param[in] format    Format of the CSV file
          */
 
-        CSVReader reader(filename, {}, format);
+        CSVReader reader(filename, std::vector<int>(), format);
         return reader.index_of(col_name);
     }
 
@@ -325,7 +325,7 @@ namespace csv {
         /** Get basic information about a CSV file */
         CSVReader reader(filename);
         CSVFormat format = reader.get_format();
-        std::vector<std::string> row;
+        CSVVec<std::string> row;
         while (reader.read_row(row));
 
         CSVFileInfo info = {
@@ -388,7 +388,7 @@ namespace csv {
         };
     }
 
-    void CSVReader::set_col_names(const std::vector<std::string>& col_names) {
+    void CSVReader::set_col_names(const CSVVec<std::string>& col_names) {
         /** Set or override the CSV's column names
          * 
          *  #### Significance
@@ -412,7 +412,7 @@ namespace csv {
         }
     }
 
-    const std::vector<std::string> CSVReader::get_col_names() const {
+    const CSVVec<std::string> CSVReader::get_col_names() const {
         return this->subset_col_names;
     }
 
@@ -425,7 +425,7 @@ namespace csv {
     }
 
     void CSVReader::feed(const std::string &in) {
-        /** Parse a CSV-formatted string. Incomplete CSV fragments can be void print_row(const std::vector<std::string>& row);name
+        /** Parse a CSV-formatted string. Incomplete CSV fragments can be void print_row(const CSVVec<std::string>& row);name
          *  joined together by calling feed() on them sequentially.
          *  **Note**: end_feed() should be called after the last string
          */
@@ -512,7 +512,7 @@ namespace csv {
         }
     }
 
-    void CSVReader::write_record(std::vector<std::string>& record) {
+    void CSVReader::write_record(CSVVec<std::string>& record) {
         /** Push the current row into a queue if it is the right length.
          *  Drop it otherwise.
          */
@@ -526,11 +526,11 @@ namespace csv {
                 this->correct_rows++;
 
                 if (!this->subset_flag) {
-                    this->records.push_back({});
+                    this->records.push_back(CSVVec<std::string>());
                     record.swap(this->records.back());
                 }
                 else {
-                    std::vector<std::string> subset_record;
+                    CSVVec<std::string> subset_record;
                     for (size_t i = 0; i < this->subset.size(); i++)
                         subset_record.push_back(record[this->subset[i] ]);
                     this->records.push_back(subset_record);
@@ -656,7 +656,7 @@ namespace csv {
         return true;
     }
 
-    bool CSVReader::read_row(std::vector<std::string> &row) {
+    bool CSVReader::read_row(CSVVec<std::string> &row) {
         /** Retrieve rows parsed by CSVReader in FIFO order.
          *   - If CSVReader was initialized with respect to a file, then this lazily
          *     iterates over the file until no more rows are available.
@@ -666,7 +666,7 @@ namespace csv {
          *
          *  #### Alternatives 
          *  If you want automatic type casting of values, then use
-         *  CSVReader::read_row(std::vector<CSVField> &row)
+         *  CSVReader::read_row(CSVVec<CSVField> &row)
          *
          *  @param[out] row A vector of strings where the read row will be stored
          */
@@ -679,10 +679,10 @@ namespace csv {
         return false;
     }
 
-    bool CSVReader::read_row(std::vector<CSVField> &row) {
+    bool CSVReader::read_row(CSVVec<CSVField> &row) {
         /** Perform automatic type-casting when retrieving rows
          *  - Much faster and more robust than calling std::stoi()
-         *    on the values of a std::vector<std::string>
+         *    on the values of a CSVVec<std::string>
          *
          *  **Note:** See the documentation for CSVField to see how to work
          *  with the output of this function
@@ -690,7 +690,7 @@ namespace csv {
          *  @param[out] row A vector of strings where the read row will be stored
          */
         if (this->read_row_check()) {
-            std::vector<std::string>& temp = *(this->current_row);
+            CSVVec<std::string>& temp = *(this->current_row);
             CSVField field;
             DataType dtype;
             bool overflow = false;

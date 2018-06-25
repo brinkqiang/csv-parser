@@ -13,10 +13,11 @@ set(SOURCES src/csv_reader.cpp src/csv_stat.cpp)
 set(TEST_SOURCES
 	tests/catch.hpp
 	tests/main.cpp
-	tests/test_data_type.cpp
-	tests/test_csv_stat.cpp
-	tests/test_read_csv.cpp
-	tests/test_write_csv.cpp
+	#tests/test_data_type.cpp
+	#tests/test_csv_stat.cpp
+	#tests/test_read_csv.cpp
+	#tests/test_write_csv.cpp
+	tests/test_csv_allocator.cpp
 )
 
 include_directories(${CMAKE_SOURCE_DIR}/src/)

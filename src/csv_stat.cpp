@@ -22,54 +22,54 @@ namespace csv {
         this->calc();
     }
 
-    std::vector<long double> CSVStat::get_mean() {
+    CSVVec<long double> CSVStat::get_mean() {
         /** Return current means */
-        std::vector<long double> ret;        
+        CSVVec<long double> ret;        
         for (size_t i = 0; i < this->subset_col_names.size(); i++) {
             ret.push_back(this->rolling_means[i]);
         }
         return ret;
     }
 
-    std::vector<long double> CSVStat::get_variance() {
+    CSVVec<long double> CSVStat::get_variance() {
         /** Return current variances */
-        std::vector<long double> ret;        
+        CSVVec<long double> ret;        
         for (size_t i = 0; i < this->subset_col_names.size(); i++) {
             ret.push_back(this->rolling_vars[i]/(this->n[i] - 1));
         }
         return ret;
     }
 
-    std::vector<long double> CSVStat::get_mins() {
+    CSVVec<long double> CSVStat::get_mins() {
         /** Return current variances */
-        std::vector<long double> ret;        
+        CSVVec<long double> ret;        
         for (size_t i = 0; i < this->subset_col_names.size(); i++) {
             ret.push_back(this->mins[i]);
         }
         return ret;
     }
 
-    std::vector<long double> CSVStat::get_maxes() {
+    CSVVec<long double> CSVStat::get_maxes() {
         /** Return current variances */
-        std::vector<long double> ret;        
+        CSVVec<long double> ret;        
         for (size_t i = 0; i < this->subset_col_names.size(); i++) {
             ret.push_back(this->maxes[i]);
         }
         return ret;
     }
 
-    std::vector< std::unordered_map<std::string, int> > CSVStat::get_counts() {
+    CSVVec< std::unordered_map<std::string, int> > CSVStat::get_counts() {
         /** Get counts for each column */
-        std::vector<std::unordered_map<std::string, int>> ret;
+        CSVVec<std::unordered_map<std::string, int>> ret;
         for (size_t i = 0; i < this->subset_col_names.size(); i++) {
             ret.push_back(this->counts[i]);
         }
         return ret;
     }
 
-    std::vector< std::unordered_map<int, int> > CSVStat::get_dtypes() {
+    CSVVec< std::unordered_map<int, int> > CSVStat::get_dtypes() {
         /** Get data type counts for each column */
-        std::vector< std::unordered_map<int, int> > ret;        
+        CSVVec< std::unordered_map<int, int> > ret;        
         for (size_t i = 0; i < this->subset_col_names.size(); i++) {
             ret.push_back(this->dtypes[i]);
         }
